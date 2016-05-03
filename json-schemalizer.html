@@ -1,0 +1,307 @@
+
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+  <title>JSON Schemalizer</title>
+
+  <meta name="description" content="">
+  <meta name="viewport" content="width=device-width">
+
+  <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.3/jquery.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/lodash.js/4.11.2/lodash.min.js"></script>
+
+  <style>
+    body {
+      font-family: arial;
+    }
+
+    .required {
+      color: red;
+    }
+
+    .property-name {
+      font-weight: bold;
+    }
+
+    .type {
+      font-size: smaller;
+      color: grey;
+    }
+
+    .description {
+      padding-left: 10px;
+      font-size: smaller;
+    }
+
+    .range {
+      font-size: smaller;
+      color: grey;
+    }
+
+    .nobr {
+      white-space: nowrap;
+    }
+
+    .format {
+      border: 1px solid black;
+      padding: 5px;
+    }
+
+    tr:nth-child(odd)		{ background-color:#eee; }
+    tr:nth-child(even)		{ background-color:#fff; }
+
+    form {
+      margin-bottom: .5em;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+    }
+
+    input {
+      display: block;
+      width: 90%;
+      font-size: larger;
+    }
+
+    textarea {
+      display: block;
+      margin-top: 1em;
+      width: 99%;
+    }
+
+    #blurb {
+      margin-bottom: 2em;
+    }
+  </style>
+
+</head>
+
+<body>
+  <h1 id="title"><script>document.write(document.title);</script></h1>
+
+  <div id="blurb">Visualize JSON Schema v3 documents.</div>
+
+
+  <form name="input">
+    <label>url to schema file:</label>
+    <input type="text" name="schemaUrl">
+    <button type="button" onclick="loadSchema();">load</button><br>
+  </form>
+
+
+  <div id="output"></div>
+
+  <form name="raw">
+    <textarea rows="20" name="schema">
+{
+  "type": "object",
+  "$schema": "http://json-schema.org/draft-03/schema",
+  "title": "schema",
+  "description": "",
+  "properties": {}
+}
+    </textarea>
+    <button type="button" onclick="renderSchema();">render</button> <button type="reset">reset</button><br>
+  </form>
+
+
+  <script type="text/template" id="schema-tpl">
+    <h1><%= title %></h1>
+    <h2><%= description %></h2>
+
+    <table>
+      <% Object.keys(properties).forEach(function(propName){
+      properties[propName].propName = propName;
+      %>
+
+      <%= handle(properties[propName]) %>
+
+      <% }) %>
+    </table>
+  </script>
+
+  <script type="text/template" id="schema-row-tpl">
+    <tr>
+      <td align="right">
+        <span class="nobr">
+          <span class="type"><%=  type %></span>
+
+          <% if ((typeof type !== 'undefined') && (type === 'array')) { %>
+            <span class="range"><%= (typeof(minitems) !== 'undefined') ? minitems : '?'  %>-<%= (typeof(maxitems) !== 'undefined') ? maxitems : '?'  %></span>
+          <% } %>
+
+          <span class="property-name"><%= propName %><%=  required ? '<sup class="required">*</sup>' : '' %></span>
+        </span>
+      </td>
+      <td class="description"><%=  (typeof(description) !== 'undefined') ? description : '' %></td>
+    </tr>
+  </script>
+
+
+  <script type="text/template" id="schema-row-indent-tpl">
+    <tr>
+      <td align="right"><!-- this space blank --></td>
+      <td>
+        <table>
+          <%= rows %>
+        </table>
+      </td>
+    </tr>
+  </script>
+
+  <script>
+    'use strict';
+
+    var schemaTpl = _.template($('#schema-tpl').html());
+    var schemaRowTpl = _.template($('#schema-row-tpl').html());
+    var schemaRowIndentTpl = _.template($('#schema-row-indent-tpl').html());
+
+    function handle(node) {
+      switch (node.type) {
+        case 'object':
+          return handleObject(node);
+          break;
+        case 'array':
+          return handleArray(node);
+          break;
+        default:
+          return handleDefault(node);
+          break;
+      }
+    }
+
+
+    /**
+     * Returns html to visualize the object.
+     *
+     * @param {object} node
+     * @returns {string}
+     */
+    function handleObject(node) {
+      var html = '';
+      var rows = '';
+      html += schemaRowTpl(node);
+
+      var obj = node.properties;
+
+      for (var prop in obj) {
+        obj[prop].propName = prop;
+        rows += handle(obj[prop]);
+      }
+
+      html += schemaRowIndentTpl({rows:rows});
+
+      return html;
+    }
+
+
+    /**
+     * Returns html to visualize the array.
+     *
+     * @param {object} node
+     * @returns {string}
+     */
+    function handleArray(node) {
+      var html = '';
+      html += schemaRowTpl(node);
+
+      node.items.propName = '_items_';
+
+      var rows = handle(node.items);
+
+      html += schemaRowIndentTpl({rows:rows});
+
+      return html;
+    }
+
+
+    /**
+     * Returns html table row.
+     *
+     * @param {object} node
+     * @returns {string}
+     */
+    function handleDefault(node) {
+      return schemaRowTpl(node);
+    }
+
+
+    /**
+     * Returns the JSON Schema version.
+     *
+     * @param {object} json full schema
+     * @returns {integer}
+     */
+    function getVersion(json) {
+      return parseInt(json.$schema.replace(/[^\d]*(\d+).*/, '$1'), 10);
+    }
+
+
+    /**
+     * Returns the query parameter value, or an empty string.
+     *
+     * @param {string} param name
+     * @returns {string}
+     */
+    function getQV(param) {
+      return decodeURIComponent(
+        _( location.search.slice(1).split('&') )
+          .map(function(item) { if (item) return item.split('='); })
+          .compact()
+          .fromPairs()
+          .value()[param] || ''
+      );
+    }
+
+
+    function loadSchema() {
+      var schemaUrl = document.forms.input.schemaUrl.value;
+
+      $.ajax({
+          url: schemaUrl,
+          method: 'GET',
+          dataType: 'json'
+        })
+        .done(function(json){
+          if (getVersion(json) === 3) {
+            $('#output').html(schemaTpl(json)).addClass('format');
+            document.forms.raw.schema.value = JSON.stringify(json, null, 2);
+          } else {
+            $('#output').html('The schema is described using JSON Schema v' + getVersion(json) + '. Only v3 is supported here.');
+          }
+        })
+        .fail(function(err){
+          $('#output').html('<pre>' + err.status + ' ' + err.statusText + '</pre>');
+          console.log(err.status, err.statusText);
+        })
+      ;
+    }
+
+
+    function renderSchema() {
+      var json = JSON.parse(document.forms.raw.schema.value);
+      $('#output').html(schemaTpl(json)).addClass('format');
+    }
+
+
+    $(function(){
+      var schemaUrl = getQV('schemaUrl');
+
+      if (schemaUrl) {
+        document.forms.input.schemaUrl.value = schemaUrl;
+        loadSchema();
+      }
+
+    });
+  </script>
+
+
+</body>
+
+</html>
